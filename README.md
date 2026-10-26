@@ -108,6 +108,22 @@ adb install -r OmniTV-latest.apk
 
 ---
 
+## Architecture & Core Packages
+
+OmniTV is engineered with a modern reactive Android stack focused on high performance and minimal memory footprint:
+
+| Package / Module | Version | Purpose |
+| :--- | :--- | :--- |
+| **AndroidX Media3 ExoPlayer** | `1.5.0` | Ultra-low latency HLS, DASH, RTSP, and TS live stream playback engine |
+| **Media3 OkHttp DataSource** | `1.5.0` | Fast connection pooling, HTTP/2 multiplexing, and robust stream timeouts |
+| **Jetpack Compose UI** | `2024.11.00 (BOM)` | Hardware-accelerated UI rendering with 60 FPS translucent frosted glass components |
+| **Jetpack Compose Material 3** | `1.3.x` | Modern styling, dynamic insets, and dark-theme palette system |
+| **KotlinX Coroutines** | `1.9.0` | Non-blocking asynchronous I/O and non-freezing M3U playlist parsing |
+| **AndroidX Activity Compose** | `1.9.3` | Back-press interception, edge-to-edge window insets, and IME software keyboard binding |
+| **OkHttp3** | `4.12.0` | High-throughput HTTP client for downloading remote M3U/M3U8 playlists |
+
+---
+
 ## Building from Source
 
 Requires **JDK 21** and **Android SDK Platform 35**.
@@ -123,3 +139,4 @@ Output: `app/build/outputs/apk/release/app-release.apk`
 ./gradlew assembleDebug
 ```
 Output: `app/build/outputs/apk/debug/app-debug.apk`
+
