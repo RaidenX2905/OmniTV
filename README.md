@@ -1,0 +1,124 @@
+# OmniTV - IPTV Player for Android
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-Android%20Phone%20%7C%20Tablet%20%7C%20Android%20TV-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Platform: Android Devices" />
+  <img src="https://img.shields.io/badge/Architecture-Kotlin%20%7C%20Jetpack%20Compose%20%7C%20Media3-4285F4?style=for-the-badge&logo=kotlin&logoColor=white" alt="Tech Stack" />
+  <img src="https://img.shields.io/badge/APK%20Size-~3.5%20MB-brightgreen?style=for-the-badge" alt="Size" />
+</p>
+
+A lightweight IPTV streaming application built with Kotlin, Jetpack Compose, and AndroidX Media3 (ExoPlayer). Works across Android phones, tablets, and Android TV / Google TV / Fire TV devices.
+
+---
+
+## Device Compatibility
+
+- **Android Phones**: Touch controls, sensor-based landscape orientation during playback, and automatic soft keyboard resizing.
+- **Android Tablets**: Responsive layout, search, and channel guide navigation.
+- **Android TV / Google TV / Fire TV**: Full D-Pad remote control support, channel switching, and remote shortcut keys.
+
+---
+
+## Playlist Configuration & Recommended Sources
+
+OmniTV works with live M3U and M3U8 IPTV playlists.
+
+### Recommended Playlist (by Creator)
+For legal and freely available public channels, you can use the community-maintained [iptv-org](https://github.com/iptv-org/iptv.git) playlist:
+
+- **Repository**: [https://github.com/iptv-org/iptv.git](https://github.com/iptv-org/iptv.git)
+- **Playlist URL**:
+  ```text
+  https://iptv-org.github.io/iptv/index.m3u
+  ```
+
+> **Custom Playlists**: The above URL is recommended for initial setup, but you can enter your own custom M3U/M3U8 playlist URL in the **Playlist URL** dialog at any time.
+
+---
+
+## Features
+
+- **Translucent Glass UI**: Frosted glass panels styled for simple, distraction-free viewing.
+- **TV Remote Navigation**:
+  - **Left / Right**: Previous / Next channel.
+  - **Up / Down**: Channel browsing or menu selection.
+  - **Center / OK**: Open HUD overlay or tune selected channel.
+  - **Green / Yellow / 0 / Audio Key**: Switch aspect ratio between Fit, Fill, and Stretch.
+  - **Menu Key**: Open Playlist URL dialog.
+- **Channel Search & Adaptive Layout**:
+  - Search channels by name, group, or number in the channel guide.
+  - In landscape mode on phones and tablets, the UI resizes when the keyboard opens so the search bar and results stay visible.
+  - On TV remotes, pressing Down from the search box navigates directly into channel results.
+  - Pressing Back clears the search text before closing the guide.
+- **Orientation Behavior**:
+  - Player forces landscape playback (flips to both landscape angles with device sensors).
+  - Playlist URL input allows portrait mode for easier typing on phones.
+- **Aspect Ratio Options**: Fit (original with letterbox), Fill (zoom to fill screen), and Stretch.
+- **Lightweight Build**: Pre-compiled release APK is around 3.5 MB with unused code stripped via R8/ProGuard.
+
+---
+
+## Remote & Navigation Shortcuts
+
+| Key / Input | Action |
+| :--- | :--- |
+| **D-Pad Center / OK / Enter** | Show overlay / Tune channel |
+| **D-Pad Left / Right** | Previous / Next channel |
+| **D-Pad Up / Down** (Overlay closed) | Channel Up / Down |
+| **D-Pad Up / Down** (Overlay open) | Move between search bar and channel list |
+| **Green / Yellow / 0 / Audio Key** | Toggle Aspect Ratio (Fit, Fill, Stretch) |
+| **Menu Button** | Open Playlist URL dialog |
+| **Back Button** | Clear search text / Close overlay / Exit app |
+
+---
+
+## Installation
+
+### Method 1: Download Pre-built APK from GitHub
+
+Download the pre-compiled APK directly from this repository and install it:
+
+- **[`OmniTV-latest.apk`](OmniTV-latest.apk)** (~3.5 MB)
+
+Works on Android phones, tablets, and Android TV devices.
+
+---
+
+### Method 2: Sideload via Wireless ADB (Windows, Linux, macOS)
+
+Connect your device and computer to the same Wi-Fi network, enable Developer Options and Network Debugging on your device, then run:
+
+#### Windows
+```cmd
+adb connect <DEVICE_IP>:5555
+adb install -r OmniTV-latest.apk
+```
+
+#### Linux
+```bash
+adb connect <DEVICE_IP>:5555
+adb install -r OmniTV-latest.apk
+```
+
+#### macOS
+```zsh
+adb connect <DEVICE_IP>:5555
+adb install -r OmniTV-latest.apk
+```
+
+---
+
+## Building from Source
+
+Requires **JDK 21** and **Android SDK Platform 35**.
+
+### Release APK (~3.5 MB)
+```bash
+./gradlew assembleRelease
+```
+Output: `app/build/outputs/apk/release/app-release.apk`
+
+### Debug APK
+```bash
+./gradlew assembleDebug
+```
+Output: `app/build/outputs/apk/debug/app-debug.apk`
