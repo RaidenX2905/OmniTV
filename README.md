@@ -13,13 +13,7 @@ A lightweight IPTV streaming application built with Kotlin, Jetpack Compose, and
 ## Screenshots
 
 <p align="center">
-  <img src="screenshots/loading_page.jpeg" width="31%" alt="Loading & Channel Cache" />
-  <img src="screenshots/live_tv_page.jpeg" width="31%" alt="Live TV & Channel Guide" />
-  <img src="screenshots/playlist_url_page.jpeg" width="31%" alt="Playlist URL Setup" />
-</p>
-
-<p align="center">
-  <em>From left to right: Fast M3U Stream Ingestion &middot; Translucent Channel Guide & Navigation &middot; Custom Playlist URL Dialog</em>
+  <img src="screenshots/screenshots_collage.jpg" width="100%" alt="OmniTV App Showcase - UI & Channel Guide" />
 </p>
 
 ---
