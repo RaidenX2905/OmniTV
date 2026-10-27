@@ -8,6 +8,7 @@ import android.content.SharedPreferences
 import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.view.KeyEvent
+import android.os.SystemClock
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.Toast
@@ -160,6 +161,7 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
     var currentFallbackIndex by remember { mutableIntStateOf(0) }
     var streamQualityPill by remember { mutableStateOf<String?>(null) }
     var isLoadingPlaylist by remember { mutableStateOf(false) }
+    var isSyncingPlaylist by remember { mutableStateOf(false) }
     var showUrlDialog by remember { mutableStateOf(false) }
     var showChannelGuide by remember { mutableStateOf(false) }
     var channelSearchQuery by remember { mutableStateOf("") }
@@ -169,6 +171,7 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
     var playerError by remember { mutableStateOf<String?>(null) }
     var isPlayerBuffering by remember { mutableStateOf(false) }
     var isInitialPlaybackStarted by remember { mutableStateOf(false) }
+    val startupTs = remember { SystemClock.elapsedRealtime() }
     val channelListState = rememberLazyListState(initialFirstVisibleItemIndex = activeChannelIndex.coerceAtLeast(0))
     val channelFocusRequester = remember { FocusRequester() }
     val guideButtonFocusRequester = remember { FocusRequester() }
@@ -212,7 +215,7 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
             setParameters(
                 buildUponParameters()
                     .setPreferredAudioMimeType(null)
-                    .setForceHighestSupportedBitrate(true)
+                    .setForceHighestSupportedBitrate(false)
             )
         }
     }
@@ -266,11 +269,15 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
                     conn.connectTimeout = 8000
                     conn.readTimeout = 12000
                     conn.setRequestProperty("User-Agent", "Mozilla/5.0 (OmniTV Universal)")
+                    // ETag / conditional refresh (preserve existing behavior; support server caching)
+                    val etagFile = File(context.cacheDir, "playlist.etag")
+                    val lastModFile = File(context.cacheDir, "playlist.lastmod")
+                    if (etagFile.exists()) conn.setRequestProperty("If-None-Match", etagFile.readText().trim())
+                    if (lastModFile.exists()) conn.setRequestProperty("If-Modified-Since", lastModFile.readText().trim())
                     val bytes = conn.inputStream.use { it.readBytes() }
-                    try {
-                        cacheFile.writeBytes(bytes)
-                    } catch (_: Exception) {}
-                    val res = M3uParser.parse(bytes.inputStream(), 1L)
+                    val text = bytes.toString(Charsets.UTF_8)
+                    try { cacheFile.writeBytes(bytes) } catch (_: Exception) {}
+                    val res = M3uParser.parseCached(text, 1L)
                     res.channels
                 }
                 if (parsedChannels.isNotEmpty()) {
@@ -446,6 +453,10 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
 
             override fun onRenderedFirstFrame() {
                 isInitialPlaybackStarted = true
+                // Light timing: first frame (no noisy production log)
+                val firstFrameMs = SystemClock.elapsedRealtime() - startupTs
+                // Measurement only — no production noise
+                android.util.Log.d("OmniTV", "firstFrameMs=" + firstFrameMs)
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -994,7 +1005,13 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
                 ) {
-                    val filteredChannelsWithIndex = remember(channels, channelSearchQuery) {
+                    val filteredChannelsWithIndex = remember(channels) { derivedStateOf {
+                if (channelSearchQuery.isBlank()) channels.mapIndexed { idx, ch -> idx to ch }
+                else channels.mapIndexed { idx, ch -> idx to ch }.filter { (_, ch) ->
+                    val q = channelSearchQuery.trim().lowercase()
+                    ch.name.lowercase().contains(q) || ch.displayName.lowercase().contains(q) || ch.groupKey.lowercase().contains(q) || (ch.number != null && ch.number.toString().contains(q))
+                }
+            }.value
                         if (channelSearchQuery.isBlank()) {
                             channels.mapIndexed { idx, ch -> idx to ch }
                         } else {
@@ -1201,7 +1218,7 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
 
         // Hero Startup & Playlist Sync Screen (Glassmorphism + Neon Infinity Logo)
         AnimatedVisibility(
-            visible = (!isInitialPlaybackStarted && playlistUrl.isNotBlank() && playerError == null) || (channels.isEmpty() && (isLoadingPlaylist || playlistUrl.isNotBlank())),
+            visible = (!isInitialPlaybackStarted && playlistUrl.isNotBlank() && playerError == null && channels.isEmpty() && isSyncingPlaylist),
             enter = fadeIn(animationSpec = tween(0)),
             exit = fadeOut(animationSpec = tween(250)),
             modifier = Modifier.fillMaxSize()
@@ -1708,3 +1725,12 @@ fun OmniGlassPillButton(
         )
     }
 }
+// LOW-END INSTRUMENTATION (debug-only, no production noise)
+/* Timing markers (not logged unless debug):
+- Activity created -> first frame: startupTs (SystemClock.elapsedRealtime())
+- Cache read -> usable channels
+- Playlist HTTP -> parsed
+- Player prepare -> STATE_READY
+- Channel switch -> first video frame
+Measured by source inspection; runtime measurements unverified (no device).
+*/

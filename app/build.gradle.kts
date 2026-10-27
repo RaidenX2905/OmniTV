@@ -6,7 +6,7 @@ plugins {
 android {
     namespace = "app.omnitv"
     compileSdk = 35
-    defaultConfig { applicationId = "app.omnitv"; minSdk = 23; targetSdk = 35; versionCode = 1; versionName = "1.0" }
+    defaultConfig { applicationId = "app.omnitv"; minSdk = 23; targetSdk = 35; versionCode = 2; versionName = "1.0.1" }
     buildFeatures { compose = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.11" }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }

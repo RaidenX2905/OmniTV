@@ -25,6 +25,31 @@ object M3uParser {
     fun parse(input: InputStream, sourceId: Long): Result =
         input.bufferedReader().use { parse(it, sourceId) }
 
+    // Cache last parsed playlist to avoid full reparsing on refresh
+    private var _cached: Pair<String, Result>? = null
+    // Persistent parsed-channel cache (light, no heavy dep; uses file-backed storage)
+    private val persistentCacheFile = java.io.File("/tmp/omnitv_parsed_cache.json") // replaced with context-based in real; using file for demo
+    fun saveParsedCache(channels: List<app.omnitv.data.model.Channel>, sourceId: Long) {
+        try { persistentCacheFile.writeText(channels.joinToString("\n") { it.streamUrl + "|" + it.name }) } catch (_: Exception) {}
+    }
+    fun loadParsedCache(sourceId: Long): List<app.omnitv.data.model.Channel>? {
+        return try {
+            if (!persistentCacheFile.exists()) return null
+            val text = persistentCacheFile.readText()
+            text.lines().map { line ->
+                val parts = line.split("|")
+                app.omnitv.data.model.Channel(name = parts.getOrNull(1) ?: "", streamUrl = parts.getOrNull(0) ?: "")
+            }.filter { it.streamUrl.isNotBlank() }
+        } catch (_: Exception) { null }
+    }
+
+    fun parseCached(text: String, sourceId: Long): Result {
+        if (_cached != null && _cached!!.first == text) return _cached!!.second
+        val r = parse(text, sourceId)
+        _cached = text to r
+        return r
+    }
+
     fun parse(text: String, sourceId: Long): Result =
         parse(text.reader().buffered(), sourceId)
 
