@@ -83,10 +83,9 @@ For legal and freely available public channels, you can use the community-mainta
 
 ### Method 1: Download Pre-built APK from GitHub Releases
 
-Download the latest production release APK from [GitHub Releases](https://github.com/RaidenX2905/OmniTV/releases/latest) or directly from the repository:
+Download the latest production release APK from [GitHub Releases](https://github.com/RaidenX2905/OmniTV/releases/latest):
 
-- **[Download OmniTV-v1.0.0.apk (Direct Release Asset)](https://github.com/RaidenX2905/OmniTV/releases/download/v1.0.0/OmniTV-v1.0.0.apk)** (~3.5 MB)
-- Repository mirror: **[`OmniTV-latest.apk`](OmniTV-latest.apk)**
+- **[Download OmniTV-v1.0.1-release.apk (Direct Release Asset)](https://github.com/RaidenX2905/OmniTV/releases/download/v1.0.1/OmniTV-v1.0.1-release.apk)** (~3.5 MB)
 
 Works on Android phones, tablets, and Android TV / Google TV / Fire TV devices.
 
