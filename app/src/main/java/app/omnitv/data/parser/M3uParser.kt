@@ -182,6 +182,7 @@ object M3uParser {
 
         val finalizedChannels = ArrayList<Channel>(groupedVariants.size)
         for (variants in groupedVariants.values) {
+            if (finalizedChannels.size >= 12000) break // Exact 12,000 channel cap for low-end device stability
             // Sort descending: highest quality rank first
             val sorted = variants.sortedByDescending { it.qualityRank }
             val primary = sorted.first()

@@ -106,6 +106,9 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var prefs: SharedPreferences
 
+    override fun onStart() { super.onStart(); window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+    override fun onStop() { super.onStop(); window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences("omnitv_prefs", Context.MODE_PRIVATE)
@@ -114,6 +117,7 @@ class MainActivity : ComponentActivity() {
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
 
         // Immersive sticky fullscreen for phones, tablets & TVs
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         val controller = WindowCompat.getInsetsController(window, window.decorView)
         controller.hide(WindowInsetsCompat.Type.systemBars())
@@ -196,34 +200,48 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
         mutableIntStateOf(prefs.getInt("aspect_mode", 0))
     }
 
-    // Optimized buffer control: fast initial startup + high-stability buffer pool to prevent freezing
-    val loadControl = remember {
-        DefaultLoadControl.Builder()
-            .setBufferDurationsMs(
-                2500,  // minBufferMs (safe cushion against network jitter)
-                15000, // maxBufferMs (ample headroom)
-                600,   // bufferForPlaybackMs (fast startup)
-                1200   // bufferForPlaybackAfterRebufferMs (stable resume)
-            )
-            .setPrioritizeTimeOverSizeThresholds(true)
+    // Bandwidth meter to dynamically adapt bitrate to fluctuating 3G/4G networks
+    val bandwidthMeter = remember {
+        androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.Builder(context)
+            .setResetOnNetworkTypeChange(true)
             .build()
     }
 
-    // Low-overhead ExoPlayer configured with auto highest bitrate selection
+    // Dynamic buffer control tuned for constrained 3G/4G cellular networks
+    val loadControl = remember {
+        DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                6000,   // minBufferMs (6s buffer cushion prevents 3G jitter stalls)
+                30000,  // maxBufferMs (30s ceiling for smooth playback)
+                1200,   // bufferForPlaybackMs (1.2s start allows 3G enough packet buildup)
+                3000    // bufferForPlaybackAfterRebufferMs (3s cushion after rebuffer)
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .setBackBuffer(5000, true) // Retain 5s back buffer to avoid re-fetching on minor frame drops
+            .build()
+    }
+
+    // Adaptive bitrate selection prioritizing low-bitrate streams on 3G/4G
     val trackSelector = remember {
         DefaultTrackSelector(context).apply {
             setParameters(
                 buildUponParameters()
                     .setPreferredAudioMimeType(null)
                     .setForceHighestSupportedBitrate(false)
+                    .setForceLowestBitrate(false)
+                    .setAllowVideoMixedMimeTypeAdaptiveness(true)
+                    .setAllowVideoNonSeamlessAdaptiveness(true)
+                    .setMaxVideoBitrate(3_500_000) // Caps bitrate to 3.5Mbps so 3G/4G cells do not choke on 1080p60/4K
+                    .setMaxVideoSize(1920, 1080)
             )
         }
     }
 
     val okHttpClient = remember {
         OkHttpClient.Builder()
-            .connectTimeout(6, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.SECONDS)
+            .connectionPool(okhttp3.ConnectionPool(8, 60, TimeUnit.SECONDS))
+            .connectTimeout(12, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .followRedirects(true)
             .followSslRedirects(true)
@@ -239,18 +257,27 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
         val mediaSourceFactory = DefaultMediaSourceFactory(
             OkHttpDataSource.Factory(okHttpClient)
                 .setUserAgent("Mozilla/5.0 (OmniTV Universal)")
+                .setTransferListener(bandwidthMeter)
         )
 
         ExoPlayer.Builder(context, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
             .setTrackSelector(trackSelector)
             .setLoadControl(loadControl)
+            .setBandwidthMeter(bandwidthMeter)
             .build()
             .apply {
                 playWhenReady = true
                 repeatMode = Player.REPEAT_MODE_OFF
             }
     }
+
+    val retryScheduler = remember { RetryScheduler(coroutineScope, maxDelayMs = 12000, initialDelayMs = 1000) }
+    val connectivityMonitor = remember { ConnectivityMonitor(context) }
+    val isNetworkConnected by connectivityMonitor.isConnected.collectAsState()
+    val activeNetworkType by connectivityMonitor.networkType.collectAsState()
+
+
 
     val cacheFile = remember { File(context.cacheDir, "playlist_cache.m3u") }
 
@@ -269,16 +296,28 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
                     conn.connectTimeout = 8000
                     conn.readTimeout = 12000
                     conn.setRequestProperty("User-Agent", "Mozilla/5.0 (OmniTV Universal)")
-                    // ETag / conditional refresh (preserve existing behavior; support server caching)
+                    // ETag / conditional refresh
                     val etagFile = File(context.cacheDir, "playlist.etag")
                     val lastModFile = File(context.cacheDir, "playlist.lastmod")
                     if (etagFile.exists()) conn.setRequestProperty("If-None-Match", etagFile.readText().trim())
                     if (lastModFile.exists()) conn.setRequestProperty("If-Modified-Since", lastModFile.readText().trim())
-                    val bytes = conn.inputStream.use { it.readBytes() }
-                    val text = bytes.toString(Charsets.UTF_8)
-                    try { cacheFile.writeBytes(bytes) } catch (_: Exception) {}
-                    val res = M3uParser.parseCached(text, 1L)
-                    res.channels
+                    
+                    conn.connect()
+                    val responseCode = conn.responseCode
+                    if (responseCode == 304 && cacheFile.exists() && cacheFile.length() > 0) {
+                        // HTTP 304 Not Modified: reuse cached channels without re-downloading
+                        M3uParser.parse(cacheFile.inputStream(), 1L).channels
+                    } else if (responseCode in 200..299) {
+                        conn.getHeaderField("ETag")?.let { etagFile.writeText(it) }
+                        conn.getHeaderField("Last-Modified")?.let { lastModFile.writeText(it) }
+                        val bytes = conn.inputStream.use { it.readBytes() }
+                        val text = bytes.toString(Charsets.UTF_8)
+                        try { cacheFile.writeBytes(bytes) } catch (_: Exception) {}
+                        val res = M3uParser.parseCached(text, 1L)
+                        res.channels
+                    } else {
+                        emptyList()
+                    }
                 }
                 if (parsedChannels.isNotEmpty()) {
                     channels = parsedChannels
@@ -346,6 +385,7 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
     }
 
     fun tuneChannel(channel: Channel, fallbackIndex: Int = 0) {
+        retryScheduler.cancel()
         playerError = null
         val allStreams = listOf(channel.streamUrl) + channel.alternativeStreamUrls
         val safeFallbackIndex = fallbackIndex.coerceIn(0, allStreams.lastIndex)
@@ -359,10 +399,39 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
             .putString("last_channel_url", channel.streamUrl)
             .apply()
 
-        val mediaItem = MediaItem.fromUri(selectedUrl)
+        val mediaItem = MediaItem.Builder()
+            .setUri(selectedUrl)
+            .setLiveConfiguration(
+                MediaItem.LiveConfiguration.Builder()
+                    .setTargetOffsetMs(8000) // 8s live offset keeps buffer stable on high-latency 3G networks
+                    .setMinOffsetMs(3000)
+                    .setMaxOffsetMs(20000)
+                    .build()
+            )
+            .build()
         exoPlayer.setMediaItem(mediaItem)
         exoPlayer.prepare()
         exoPlayer.play()
+    }
+
+    DisposableEffect(Unit) {
+        connectivityMonitor.start(
+            onNetworkRestored = {
+                // Auto-recover current channel playback when internet connectivity returns
+                coroutineScope.launch(Dispatchers.Main) {
+                    if (channels.isNotEmpty() && activeChannelIndex in channels.indices) {
+                        val ch = channels[activeChannelIndex]
+                        streamQualityPill = "Network restored: resuming playback…"
+                        retryScheduler.cancel()
+                        tuneChannel(ch, currentFallbackIndex)
+                    }
+                }
+            }
+        )
+        onDispose {
+            connectivityMonitor.stop()
+            retryScheduler.cancel()
+        }
     }
 
     fun failoverToNextStream(reason: String) {
@@ -376,21 +445,30 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
             tuneChannel(channel, nextIndex)
         } else if (allStreams.size > 1) {
             // Cycled through all variants, restart primary stream with clean connection
-            streamQualityPill = "Re-connecting to primary stream..."
+            streamQualityPill = "Re-connecting to primary stream…"
             tuneChannel(channel, 0)
         } else {
             // Single stream, perform fast reconnect without stalling user
-            val mediaItem = MediaItem.fromUri(channel.streamUrl)
+            val mediaItem = MediaItem.Builder()
+                .setUri(channel.streamUrl)
+                .setLiveConfiguration(
+                    MediaItem.LiveConfiguration.Builder()
+                        .setTargetOffsetMs(8000)
+                        .setMinOffsetMs(3000)
+                        .setMaxOffsetMs(20000)
+                        .build()
+                )
+                .build()
             exoPlayer.setMediaItem(mediaItem)
             exoPlayer.prepare()
             exoPlayer.play()
         }
     }
 
-    // Auto-failover watchdog: if playback stays buffering for > 4.5 seconds, automatically switch stream
+    // Auto-failover watchdog: if playback stays buffering for > 7.5 seconds on mobile data, automatically switch stream
     LaunchedEffect(isPlayerBuffering, currentStreamUrl) {
         if (isPlayerBuffering && isInitialPlaybackStarted) {
-            delay(4500)
+            delay(7500)
             if (isPlayerBuffering) {
                 failoverToNextStream("Buffering timeout")
             }
@@ -453,9 +531,8 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
 
             override fun onRenderedFirstFrame() {
                 isInitialPlaybackStarted = true
-                // Light timing: first frame (no noisy production log)
+                retryScheduler.cancel()
                 val firstFrameMs = SystemClock.elapsedRealtime() - startupTs
-                // Measurement only — no production noise
                 android.util.Log.d("OmniTV", "firstFrameMs=" + firstFrameMs)
             }
 
@@ -463,21 +540,40 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
                 isPlayerBuffering = (playbackState == Player.STATE_BUFFERING)
                 if (playbackState == Player.STATE_READY) {
                     isInitialPlaybackStarted = true
+                    retryScheduler.cancel()
                 }
             }
 
             override fun onPlayerError(error: PlaybackException) {
                 isPlayerBuffering = false
                 isInitialPlaybackStarted = true
-                
-                // If stream died or errored, try alternate stream automatically
+
                 if (channels.isNotEmpty() && activeChannelIndex in channels.indices) {
                     val channel = channels[activeChannelIndex]
                     val allStreams = listOf(channel.streamUrl) + channel.alternativeStreamUrls
+                    // 1. Try alternate quality/source stream if available
                     if (allStreams.size > 1 && currentFallbackIndex + 1 < allStreams.size) {
                         val nextIndex = currentFallbackIndex + 1
                         streamQualityPill = "Stream offline: auto-switching to stream #${nextIndex + 1}"
                         tuneChannel(channel, nextIndex)
+                        return
+                    }
+
+                    // 2. Check if error is recoverable network issue
+                    if (ErrorClassifier.isRecoverableNetwork(error)) {
+                        streamQualityPill = "Network glitch: retrying connection…"
+                        retryScheduler.schedule {
+                            withContext(Dispatchers.Main) {
+                                if (channels.isNotEmpty() && activeChannelIndex in channels.indices) {
+                                    val ch = channels[activeChannelIndex]
+                                    val mediaItem = MediaItem.fromUri(currentStreamUrl)
+                                    exoPlayer.setMediaItem(mediaItem)
+                                    exoPlayer.prepare()
+                                    exoPlayer.play()
+                                    true
+                                } else false
+                            }
+                        }
                         return
                     }
                 }
@@ -487,6 +583,7 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
 
         exoPlayer.addListener(listener)
         onDispose {
+            retryScheduler.cancel()
             exoPlayer.removeListener(listener)
             exoPlayer.release()
         }
@@ -503,18 +600,22 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
         }
     }
 
-    // Auto-hide HUD overlay after 5 seconds of inactivity (only when channel guide and dialogs are closed)
-    val resetOverlayTimer = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
-    LaunchedEffect(showOverlay, showChannelGuide, showUrlDialog, showAspectDialog, showExitDialog) {
-        if (showOverlay && !showChannelGuide && !showUrlDialog && !showAspectDialog && !showExitDialog) {
-            resetOverlayTimer.collectLatest {
-                delay(5000)
-                showOverlay = false
-            }
+    // Auto-hide HUD overlay after 5 seconds of inactivity
+    var userInteractionTs by remember { mutableLongStateOf(0L) }
+    fun notifyUserInteraction() {
+        userInteractionTs = SystemClock.elapsedRealtime()
+    }
+    val resetOverlayTimer = remember {
+        object {
+            fun tryEmit(unit: Unit) { notifyUserInteraction() }
         }
     }
-    LaunchedEffect(showOverlay, showChannelGuide) {
-        if (showOverlay || showChannelGuide) resetOverlayTimer.tryEmit(Unit)
+
+    LaunchedEffect(showOverlay, showChannelGuide, showUrlDialog, showAspectDialog, showExitDialog, userInteractionTs) {
+        if (showOverlay && !showChannelGuide && !showUrlDialog && !showAspectDialog && !showExitDialog) {
+            delay(5000)
+            showOverlay = false
+        }
     }
 
     BackHandler(enabled = true) {
@@ -849,7 +950,8 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
                     ) {
-                        // Consume clicks so they don't fall through to root container toggle
+                        // Tapping background of overlay dismisses controls immediately
+                        showOverlay = false
                     }
                     .windowInsetsPadding(WindowInsets.safeDrawing)
                     .padding(
@@ -1005,13 +1107,7 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
                 ) {
-                    val filteredChannelsWithIndex = remember(channels) { derivedStateOf {
-                if (channelSearchQuery.isBlank()) channels.mapIndexed { idx, ch -> idx to ch }
-                else channels.mapIndexed { idx, ch -> idx to ch }.filter { (_, ch) ->
-                    val q = channelSearchQuery.trim().lowercase()
-                    ch.name.lowercase().contains(q) || ch.displayName.lowercase().contains(q) || ch.groupKey.lowercase().contains(q) || (ch.number != null && ch.number.toString().contains(q))
-                }
-            }.value
+                    val filteredChannelsWithIndex = remember(channels, channelSearchQuery) {
                         if (channelSearchQuery.isBlank()) {
                             channels.mapIndexed { idx, ch -> idx to ch }
                         } else {
@@ -1218,7 +1314,7 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
 
         // Hero Startup & Playlist Sync Screen (Glassmorphism + Neon Infinity Logo)
         AnimatedVisibility(
-            visible = (!isInitialPlaybackStarted && playlistUrl.isNotBlank() && playerError == null && channels.isEmpty() && isSyncingPlaylist),
+            visible = (!isInitialPlaybackStarted && playlistUrl.isNotBlank() && playerError == null) || (channels.isEmpty() && isLoadingPlaylist),
             enter = fadeIn(animationSpec = tween(0)),
             exit = fadeOut(animationSpec = tween(250)),
             modifier = Modifier.fillMaxSize()
