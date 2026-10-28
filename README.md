@@ -10,14 +10,6 @@ A lightweight IPTV streaming application built with Kotlin, Jetpack Compose, and
 
 ---
 
-## Screenshots
-
-<p align="center">
-  <img src="screenshots/screenshots_collage.jpg" width="100%" alt="OmniTV App Showcase - UI & Channel Guide" />
-</p>
-
----
-
 ## Device Compatibility
 
 - **Android Phones**: Touch controls, sensor-based landscape orientation during playback, and automatic soft keyboard resizing.
