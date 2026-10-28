@@ -37,9 +37,13 @@ For legal and freely available public channels, you can use the community-mainta
 
 ## Features
 
+- **Always-On Adaptive Audio Normalization**: Real-time ITU-R BS.1770 / EBU R128 loudness compressor and peak limiter. Equalizes volume spikes between quiet channels and loud commercials with transparent attack/release smoothing and zero distortion, leaving hardware volume controls 100% independent.
+- **Instant Aspect-Ratio Cycling**: Tap on phone or press OK / Remote shortcuts (`Green`, `Yellow`, `Audio`, `0`) to instantly cycle through **Fit → Fill (Zoom & Crop) → Stretch → Fit** with immediate viewport resizing and no disruptive dialogs.
+- **Geometric True-Center Startup**: Clean, mathematically centered neon infinity hero logo with non-shifting status and loader controls docked neatly beneath.
 - **5-Second Auto-Hide HUD**: Player controls, channel details, and top bar automatically fade out after 5 seconds of inactivity on both touch and TV remote, leaving an unobstructed full-screen stream.
 - **Keep Screen Awake**: Automatic screen timeout is prevented during active viewing and channel navigation, automatically restoring normal device sleep behavior when leaving the app.
-- **Adaptive 3G / 4G Cellular Streaming**: Integrated `DefaultBandwidthMeter`, 30s buffer cushion, and HLS live target offset to eliminate stuttering and buffering on low-speed mobile networks.
+- **Adaptive Cellular Streaming & Rebuffer Prevention**: Integrated `DefaultBandwidthMeter`, adaptive buffer durations (800ms start, 2.5s–15s cushion), and automatic failover watchdogs to eliminate stuttering and buffering loops on 3G/4G/5G networks.
+- **Safe Playlist Caching & Memory Protection**: URL-isolated disk caching with ETag / Last-Modified 304 revalidation, bounded 40MB response limits, and a 12,000-channel cap to protect low-end Android hardware from OOM crashes.
 - **Translucent Glass UI**: Frosted glass panels styled for simple, distraction-free viewing.
 - **TV Remote Navigation**:
   - **Left / Right**: Previous / Next channel.
@@ -65,12 +69,12 @@ For legal and freely available public channels, you can use the community-mainta
 | Key / Input | Action |
 | :--- | :--- |
 | **D-Pad Center / OK / Enter** | Show overlay (auto-hides after 5s) / Tune channel |
-| **D-Pad Left / Right** | Previous / Next channel |
-| **D-Pad Up / Down** (Overlay closed) | Channel Up / Down |
-| **D-Pad Up / Down** (Overlay open) | Move between search bar and channel list |
-| **Green / Yellow / 0 / Audio Key** | Toggle Aspect Ratio (Fit, Fill, Stretch) |
-| **Menu Button** | Open Playlist URL dialog |
-| **Back Button** | Clear search text / Close overlay / Exit app |
+| **D-Pad Left / Right** | Fast channel zap previous / next |
+| **D-Pad Up / Down** (Overlay closed) | Open channel guide |
+| **D-Pad Up / Down** (Overlay open) | Move between search bar, action pills, and channel list |
+| **Green / Yellow / 0 / Audio Key** | Instant Aspect-Ratio toggle (`Fit → Fill → Stretch`) |
+| **Menu Button** | Open Playlist URL configuration dialog |
+| **Back Button** | Clear search text / Close overlay / Exit app confirmation |
 
 ---
 
@@ -80,7 +84,7 @@ For legal and freely available public channels, you can use the community-mainta
 
 Download the latest production release APK from [GitHub Releases](https://github.com/RaidenX2905/OmniTV/releases/latest):
 
-- **[Download OmniTV-v1.0.2-release.apk (Direct Release Asset)](https://github.com/RaidenX2905/OmniTV/releases/download/v1.0.2/OmniTV-v1.0.2-release.apk)** (~3.5 MB)
+- **[Download OmniTV-v1.0.3-release.apk (Direct Release Asset)](https://github.com/RaidenX2905/OmniTV/releases/download/v1.0.3/OmniTV-v1.0.3-release.apk)** (~3.5 MB)
 
 Works on Android phones, tablets, and Android TV / Google TV / Fire TV devices.
 

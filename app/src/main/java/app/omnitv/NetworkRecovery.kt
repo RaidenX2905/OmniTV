@@ -49,7 +49,7 @@ class RetryScheduler(
     @Volatile
     private var isCancelled = false
 
-    fun schedule(action: suspend () -> Boolean) {
+    fun schedule(action: suspend () -> Unit) {
         cancel()
         isCancelled = false
         job = scope.launch {
@@ -60,24 +60,26 @@ class RetryScheduler(
                 val jitter = Random.nextLong(0, 300)
                 delay(delayWithCap + jitter)
                 if (isCancelled) break
-                val success = try {
+                try {
                     action()
-                } catch (_: Exception) {
-                    false
-                }
-                if (success) {
-                    attempt = 0
-                    return@launch
-                }
+                } catch (_: Exception) {}
                 attempt++
             }
         }
+    }
+
+    fun markSuccess() {
+        attempt = 0
+        cancel()
     }
 
     fun cancel() {
         isCancelled = true
         job?.cancel()
         job = null
+    }
+
+    fun resetAttempt() {
         attempt = 0
     }
 }

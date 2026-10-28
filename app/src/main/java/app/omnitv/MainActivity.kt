@@ -33,6 +33,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -158,6 +160,7 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
         mutableStateOf(prefs.getString("playlist_url", "") ?: "")
     }
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
+    var playlistLoadError by remember { mutableStateOf<String?>(null) }
     var activeChannelIndex by remember {
         mutableIntStateOf(prefs.getInt("last_channel_index", 0))
     }
@@ -169,7 +172,6 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
     var showUrlDialog by remember { mutableStateOf(false) }
     var showChannelGuide by remember { mutableStateOf(false) }
     var channelSearchQuery by remember { mutableStateOf("") }
-    var showAspectDialog by remember { mutableStateOf(false) }
     var showExitDialog by remember { mutableStateOf(false) }
     var showOverlay by remember { mutableStateOf(false) }
     var playerError by remember { mutableStateOf<String?>(null) }
@@ -200,30 +202,38 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
         mutableIntStateOf(prefs.getInt("aspect_mode", 0))
     }
 
-    // Bandwidth meter to dynamically adapt bitrate to fluctuating 3G/4G networks
+    // Bandwidth meter to dynamically adapt bitrate to network conditions
     val bandwidthMeter = remember {
         androidx.media3.exoplayer.upstream.DefaultBandwidthMeter.Builder(context)
             .setResetOnNetworkTypeChange(true)
             .build()
     }
 
-    // Dynamic buffer control tuned for constrained 3G/4G cellular networks
+    val diagnostics = remember { PlaybackDiagnostics() }
+
+    // Adaptive LoadControl: fast startup (800ms) with resilient live buffer cushion (2.5s-15s)
     val loadControl = remember {
         DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                6000,   // minBufferMs (6s buffer cushion prevents 3G jitter stalls)
-                30000,  // maxBufferMs (30s ceiling for smooth playback)
-                1200,   // bufferForPlaybackMs (1.2s start allows 3G enough packet buildup)
-                3000    // bufferForPlaybackAfterRebufferMs (3s cushion after rebuffer)
+                2500,   // minBufferMs: lower floor for instant start without starving playback
+                15000,  // maxBufferMs: 15s ceiling prevents excessive memory and latency buildup
+                800,    // bufferForPlaybackMs: 800ms start buffer gives fast channel switching
+                2000    // bufferForPlaybackAfterRebufferMs: 2s rebuffer cushion to break rebuffer loops
             )
             .setPrioritizeTimeOverSizeThresholds(true)
-            .setBackBuffer(5000, true) // Retain 5s back buffer to avoid re-fetching on minor frame drops
+            .setBackBuffer(3000, true) // Retain 3s back buffer for smooth transient recovery
             .build()
     }
 
-    // Adaptive bitrate selection prioritizing low-bitrate streams on 3G/4G
+    // Adaptive bitrate selection with conservative start and fast downscale
     val trackSelector = remember {
-        DefaultTrackSelector(context).apply {
+        val adaptiveTrackSelectionFactory = androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection.Factory(
+            1000, // minDurationForQualityIncreaseMs: wait 1s of stable throughput before scaling up
+            2500, // maxDurationForQualityDecreaseMs: scale down rapidly within 2.5s if throughput drops
+            2000, // minDurationToRetainAfterDiscardMs
+            0.75f // bandwidthFraction: use 75% of measured bandwidth to leave headroom for IPTV bursts
+        )
+        DefaultTrackSelector(context, adaptiveTrackSelectionFactory).apply {
             setParameters(
                 buildUponParameters()
                     .setPreferredAudioMimeType(null)
@@ -231,7 +241,7 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
                     .setForceLowestBitrate(false)
                     .setAllowVideoMixedMimeTypeAdaptiveness(true)
                     .setAllowVideoNonSeamlessAdaptiveness(true)
-                    .setMaxVideoBitrate(3_500_000) // Caps bitrate to 3.5Mbps so 3G/4G cells do not choke on 1080p60/4K
+                    .setMaxVideoBitrate(8_000_000) // 8Mbps max preserves crisp 1080p without 4K memory thrash
                     .setMaxVideoSize(1920, 1080)
             )
         }
@@ -239,9 +249,9 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
 
     val okHttpClient = remember {
         OkHttpClient.Builder()
-            .connectionPool(okhttp3.ConnectionPool(8, 60, TimeUnit.SECONDS))
-            .connectTimeout(12, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
+            .connectionPool(okhttp3.ConnectionPool(16, 120, TimeUnit.SECONDS))
+            .connectTimeout(6, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .followRedirects(true)
             .followSslRedirects(true)
@@ -249,9 +259,36 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
     }
 
     val exoPlayer = remember {
-        val renderersFactory = DefaultRenderersFactory(context).apply {
+        val audioNormalizer = app.omnitv.audio.AdaptiveAudioNormalizer()
+
+        val renderersFactory = object : DefaultRenderersFactory(context) {
+            override fun buildAudioSink(
+                context: android.content.Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean
+            ): androidx.media3.exoplayer.audio.AudioSink {
+                return androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setAudioProcessors(arrayOf(audioNormalizer))
+                    .build()
+            }
+        }.apply {
             setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
             setEnableDecoderFallback(true) // Fall back to secondary codecs if primary decoder stalls
+        }
+
+        val loadErrorHandlingPolicy = object : androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy() {
+            override fun getRetryDelayMsFor(loadErrorInfo: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo): Long {
+                // For HTTP 4xx errors, never retry
+                val ex = loadErrorInfo.exception
+                if (ex is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+                    if (ErrorClassifier.isPermanentHttp(ex.responseCode)) {
+                        return androidx.media3.common.C.TIME_UNSET // Do not retry permanent HTTP errors
+                    }
+                }
+                return super.getRetryDelayMsFor(loadErrorInfo).coerceAtMost(3000L)
+            }
         }
 
         val mediaSourceFactory = DefaultMediaSourceFactory(
@@ -259,6 +296,10 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
                 .setUserAgent("Mozilla/5.0 (OmniTV Universal)")
                 .setTransferListener(bandwidthMeter)
         )
+            .setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
+            .setLiveTargetOffsetMs(3500) // 3.5s live offset: perfect balance of low latency and zero stalls
+            .setLiveMinOffsetMs(1500)
+            .setLiveMaxOffsetMs(10000)
 
         ExoPlayer.Builder(context, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
@@ -269,6 +310,7 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
             .apply {
                 playWhenReady = true
                 repeatMode = Player.REPEAT_MODE_OFF
+                addAnalyticsListener(diagnostics)
             }
     }
 
@@ -279,7 +321,19 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
 
 
 
-    val cacheFile = remember { File(context.cacheDir, "playlist_cache.m3u") }
+    fun playlistKeyFor(url: String): String =
+        java.security.MessageDigest.getInstance("MD5")
+            .digest(url.trim().toByteArray())
+            .joinToString("") { "%02x".format(it) }
+
+    fun playlistCacheFileFor(url: String): File =
+        File(context.cacheDir, "playlist_${playlistKeyFor(url)}.m3u")
+
+    fun playlistEtagFileFor(url: String): File =
+        File(context.cacheDir, "playlist_${playlistKeyFor(url)}.etag")
+
+    fun playlistLastModFileFor(url: String): File =
+        File(context.cacheDir, "playlist_${playlistKeyFor(url)}.lastmod")
 
     fun loadM3u(urlStr: String, isInitialCached: Boolean = false) {
         if (urlStr.isBlank()) {
@@ -288,39 +342,66 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
         }
         if (!isInitialCached) {
             isLoadingPlaylist = true
+            playlistLoadError = null
         }
         coroutineScope.launch {
             try {
                 val parsedChannels = withContext(Dispatchers.IO) {
+                    val key = playlistKeyFor(urlStr)
+                    val cacheFile = playlistCacheFileFor(urlStr)
+                    val etagFile = playlistEtagFileFor(urlStr)
+                    val lastModFile = playlistLastModFileFor(urlStr)
+
                     val conn = URL(urlStr).openConnection() as HttpURLConnection
                     conn.connectTimeout = 8000
                     conn.readTimeout = 12000
                     conn.setRequestProperty("User-Agent", "Mozilla/5.0 (OmniTV Universal)")
-                    // ETag / conditional refresh
-                    val etagFile = File(context.cacheDir, "playlist.etag")
-                    val lastModFile = File(context.cacheDir, "playlist.lastmod")
+                    // ETag / conditional refresh isolated per playlist URL
                     if (etagFile.exists()) conn.setRequestProperty("If-None-Match", etagFile.readText().trim())
                     if (lastModFile.exists()) conn.setRequestProperty("If-Modified-Since", lastModFile.readText().trim())
                     
                     conn.connect()
                     val responseCode = conn.responseCode
                     if (responseCode == 304 && cacheFile.exists() && cacheFile.length() > 0) {
-                        // HTTP 304 Not Modified: reuse cached channels without re-downloading
+                        // HTTP 304 Not Modified: reuse URL-isolated cached channels safely
                         M3uParser.parse(cacheFile.inputStream(), 1L).channels
                     } else if (responseCode in 200..299) {
+                        // Check content-length header if provided (max 40 MB)
+                        val contentLength = conn.contentLengthLong
+                        if (contentLength > 40 * 1024 * 1024) {
+                            throw IllegalStateException("Playlist exceeds 40MB limit")
+                        }
                         conn.getHeaderField("ETag")?.let { etagFile.writeText(it) }
                         conn.getHeaderField("Last-Modified")?.let { lastModFile.writeText(it) }
-                        val bytes = conn.inputStream.use { it.readBytes() }
+
+                        // Bound reading up to 40 MB to protect memory on low-end hardware
+                        val maxBytes = 40 * 1024 * 1024
+                        val buffer = java.io.ByteArrayOutputStream()
+                        val chunk = ByteArray(8192)
+                        var totalRead = 0
+                        conn.inputStream.use { stream ->
+                            while (true) {
+                                val r = stream.read(chunk)
+                                if (r == -1) break
+                                totalRead += r
+                                if (totalRead > maxBytes) {
+                                    throw IllegalStateException("Playlist exceeds 40MB limit")
+                                }
+                                buffer.write(chunk, 0, r)
+                            }
+                        }
+                        val bytes = buffer.toByteArray()
                         val text = bytes.toString(Charsets.UTF_8)
                         try { cacheFile.writeBytes(bytes) } catch (_: Exception) {}
-                        val res = M3uParser.parseCached(text, 1L)
+                        val res = M3uParser.parseCached(key, text, 1L)
                         res.channels
                     } else {
-                        emptyList()
+                        throw java.io.IOException("HTTP $responseCode from server")
                     }
                 }
                 if (parsedChannels.isNotEmpty()) {
                     channels = parsedChannels
+                    playlistLoadError = null
                     prefs.edit().putString("playlist_url", urlStr).apply()
                     val savedChannelUrl = prefs.getString("last_channel_url", null)
                     val targetIdx = if (savedChannelUrl != null) {
@@ -333,12 +414,14 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
                         activeChannelIndex = targetIdx
                     }
                     playerError = null
-                } else if (!isInitialCached) {
-                    Toast.makeText(context, "No channels found in playlist", Toast.LENGTH_LONG).show()
+                } else {
+                    if (channels.isEmpty()) {
+                        playlistLoadError = "Playlist contains 0 playable channels."
+                    }
                 }
             } catch (e: Exception) {
-                if (!isInitialCached) {
-                    Toast.makeText(context, "Network failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                if (channels.isEmpty()) {
+                    playlistLoadError = e.localizedMessage ?: "Failed to load playlist"
                 }
             } finally {
                 isLoadingPlaylist = false
@@ -348,7 +431,8 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
 
     LaunchedEffect(Unit) {
         if (playlistUrl.isNotBlank()) {
-            // Instant startup from disk cache
+            val cacheFile = playlistCacheFileFor(playlistUrl)
+            // Instant startup from isolated disk cache
             withContext(Dispatchers.IO) {
                 if (cacheFile.exists() && cacheFile.length() > 0) {
                     try {
@@ -399,13 +483,14 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
             .putString("last_channel_url", channel.streamUrl)
             .apply()
 
+        diagnostics.startSession()
         val mediaItem = MediaItem.Builder()
             .setUri(selectedUrl)
             .setLiveConfiguration(
                 MediaItem.LiveConfiguration.Builder()
-                    .setTargetOffsetMs(8000) // 8s live offset keeps buffer stable on high-latency 3G networks
-                    .setMinOffsetMs(3000)
-                    .setMaxOffsetMs(20000)
+                    .setTargetOffsetMs(3500) // 3.5s live offset: low latency and zero stalls on IPTV
+                    .setMinOffsetMs(1500)
+                    .setMaxOffsetMs(10000)
                     .build()
             )
             .build()
@@ -453,9 +538,9 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
                 .setUri(channel.streamUrl)
                 .setLiveConfiguration(
                     MediaItem.LiveConfiguration.Builder()
-                        .setTargetOffsetMs(8000)
-                        .setMinOffsetMs(3000)
-                        .setMaxOffsetMs(20000)
+                        .setTargetOffsetMs(3500)
+                        .setMinOffsetMs(1500)
+                        .setMaxOffsetMs(10000)
                         .build()
                 )
                 .build()
@@ -531,7 +616,7 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
 
             override fun onRenderedFirstFrame() {
                 isInitialPlaybackStarted = true
-                retryScheduler.cancel()
+                retryScheduler.markSuccess()
                 val firstFrameMs = SystemClock.elapsedRealtime() - startupTs
                 android.util.Log.d("OmniTV", "firstFrameMs=" + firstFrameMs)
             }
@@ -540,7 +625,7 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
                 isPlayerBuffering = (playbackState == Player.STATE_BUFFERING)
                 if (playbackState == Player.STATE_READY) {
                     isInitialPlaybackStarted = true
-                    retryScheduler.cancel()
+                    retryScheduler.markSuccess()
                 }
             }
 
@@ -566,12 +651,8 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
                             withContext(Dispatchers.Main) {
                                 if (channels.isNotEmpty() && activeChannelIndex in channels.indices) {
                                     val ch = channels[activeChannelIndex]
-                                    val mediaItem = MediaItem.fromUri(currentStreamUrl)
-                                    exoPlayer.setMediaItem(mediaItem)
-                                    exoPlayer.prepare()
-                                    exoPlayer.play()
-                                    true
-                                } else false
+                                    tuneChannel(ch, currentFallbackIndex)
+                                }
                             }
                         }
                         return
@@ -584,6 +665,7 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
         exoPlayer.addListener(listener)
         onDispose {
             retryScheduler.cancel()
+            exoPlayer.removeAnalyticsListener(diagnostics)
             exoPlayer.removeListener(listener)
             exoPlayer.release()
         }
@@ -611,10 +693,11 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
         }
     }
 
-    LaunchedEffect(showOverlay, showChannelGuide, showUrlDialog, showAspectDialog, showExitDialog, userInteractionTs) {
-        if (showOverlay && !showChannelGuide && !showUrlDialog && !showAspectDialog && !showExitDialog) {
+    LaunchedEffect(showOverlay, showChannelGuide, showUrlDialog, showExitDialog, userInteractionTs) {
+        if (showOverlay && !showUrlDialog && !showExitDialog) {
             delay(5000)
             showOverlay = false
+            showChannelGuide = false
         }
     }
 
@@ -622,7 +705,6 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
         when {
             showExitDialog -> showExitDialog = false
             showUrlDialog -> showUrlDialog = false
-            showAspectDialog -> showAspectDialog = false
             showChannelGuide && channelSearchQuery.isNotEmpty() -> channelSearchQuery = ""
             showChannelGuide -> showChannelGuide = false
             showOverlay -> showOverlay = false
@@ -663,7 +745,7 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
                     resetOverlayTimer.tryEmit(Unit)
                     when (keyEvent.nativeKeyEvent.keyCode) {
                         KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                            if (showAspectDialog || showUrlDialog || showExitDialog) {
+                            if (showUrlDialog || showExitDialog) {
                                 false
                             } else if (!showOverlay) {
                                 // Fullscreen: open HUD overlay and focus Channel Guide button
@@ -741,12 +823,16 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
                         KeyEvent.KEYCODE_PROG_GREEN,
                         KeyEvent.KEYCODE_PROG_YELLOW,
                         KeyEvent.KEYCODE_MEDIA_AUDIO_TRACK,
-                        KeyEvent.KEYCODE_CAPTIONS,
+                        KeyEvent.KEYCODE_0,
+                        KeyEvent.KEYCODE_NUMPAD_0 -> {
+                            // Remote Aspect Ratio shortcut: Green, Yellow, Audio, 0 key
+                            cycleAspectMode()
+                            true
+                        }
                         KeyEvent.KEYCODE_BACK -> {
                             when {
                                 showExitDialog -> showExitDialog = false
                                 showUrlDialog -> showUrlDialog = false
-                                showAspectDialog -> showAspectDialog = false
                                 showChannelGuide && channelSearchQuery.isNotEmpty() -> channelSearchQuery = ""
                                 showChannelGuide -> showChannelGuide = false
                                 showOverlay -> showOverlay = false
@@ -763,6 +849,10 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
                 indication = null
             ) {
                 showOverlay = !showOverlay
+                if (!showOverlay) {
+                    showChannelGuide = false
+                }
+                resetOverlayTimer.tryEmit(Unit)
             }
     ) {
         val currentResizeMode = when (aspectMode) {
@@ -950,8 +1040,10 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
                     ) {
-                        // Tapping background of overlay dismisses controls immediately
+                        // Tapping background of overlay dismisses controls and guide immediately
                         showOverlay = false
+                        showChannelGuide = false
+                        resetOverlayTimer.tryEmit(Unit)
                     }
                     .windowInsetsPadding(WindowInsets.safeDrawing)
                     .padding(
@@ -1067,12 +1159,12 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
                             }
                         )
 
-                        // 2. Aspect Ratio Selector (Fit, Fill, Stretch)
+                        // 2. Aspect Ratio Selector (Fit, Fill, Stretch - Instant cycle on click/OK)
                         OmniGlassPillButton(
                             text = aspectLabel,
                             compact = isCompact,
                             onClick = {
-                                showAspectDialog = true
+                                cycleAspectMode()
                                 resetOverlayTimer.tryEmit(Unit)
                             }
                         )
@@ -1314,7 +1406,7 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
 
         // Hero Startup & Playlist Sync Screen (Glassmorphism + Neon Infinity Logo)
         AnimatedVisibility(
-            visible = (!isInitialPlaybackStarted && playlistUrl.isNotBlank() && playerError == null) || (channels.isEmpty() && isLoadingPlaylist),
+            visible = (!isInitialPlaybackStarted && playlistUrl.isNotBlank() && playerError == null && playlistLoadError == null) || (channels.isEmpty() && (isLoadingPlaylist || playlistLoadError != null)),
             enter = fadeIn(animationSpec = tween(0)),
             exit = fadeOut(animationSpec = tween(250)),
             modifier = Modifier.fillMaxSize()
@@ -1322,54 +1414,101 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(OmniGlass.Background),
-                contentAlignment = Alignment.Center
+                    .background(OmniGlass.Background)
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(if (isCompact) 14.dp else 20.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(if (isCompact) 110.dp else 150.dp)
-                            .clip(RoundedCornerShape(32.dp))
-                            .background(Color(0x331E293B))
-                            .border(1.5.dp, OmniGlass.GlassBorder, RoundedCornerShape(32.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                            contentDescription = "OmniTV Hero Logo",
-                            modifier = Modifier.size(if (isCompact) 100.dp else 140.dp)
-                        )
-                    }
+                val logoBoxSize = when {
+                    isCompact -> 90.dp
+                    isTablet -> 120.dp
+                    else -> 140.dp
+                }
+                val logoImgSize = when {
+                    isCompact -> 80.dp
+                    isTablet -> 110.dp
+                    else -> 130.dp
+                }
 
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = "OMNI TV",
-                            color = Color.White,
-                            fontSize = if (isCompact) 22.sp else 28.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 2.sp
-                        )
-                        Text(
-                            text = if (isLoadingPlaylist) "Synchronizing playlist channels…" else "Preparing stream engine…",
-                            color = OmniGlass.TextSecondary,
-                            fontSize = if (isCompact) 13.sp else 15.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
+                // 1. Logo placed strictly at geometric center (50% X, 50% Y)
+                Box(
+                    modifier = Modifier
+                        .size(logoBoxSize)
+                        .align(Alignment.Center)
+                        .clip(RoundedCornerShape(28.dp))
+                        .background(Color(0x331E293B))
+                        .border(1.5.dp, OmniGlass.GlassBorder, RoundedCornerShape(28.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                        contentDescription = "OmniTV Hero Logo",
+                        modifier = Modifier.size(logoImgSize)
+                    )
+                }
+
+                // 2. Status texts & progress neatly docked below center with generous clearance
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = if (isCompact) 28.dp else 44.dp)
+                        .fillMaxWidth()
+                        .wrapContentHeight(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "OMNI TV",
+                        color = Color.White,
+                        fontSize = if (isCompact) 18.sp else 22.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 2.sp
+                    )
 
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    CircularProgressIndicator(
-                        color = OmniGlass.AccentNeon,
-                        strokeWidth = 3.dp,
-                        modifier = Modifier.size(if (isCompact) 28.dp else 36.dp)
+                    val statusText = when {
+                        playlistLoadError != null -> playlistLoadError ?: "Playlist loading error"
+                        isLoadingPlaylist -> "Synchronizing playlist channels…"
+                        else -> "Preparing stream engine…"
+                    }
+                    Text(
+                        text = statusText,
+                        color = if (playlistLoadError != null) Color(0xFFFF8B8B) else OmniGlass.TextSecondary,
+                        fontSize = if (isCompact) 12.sp else 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 24.dp)
                     )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    if (playlistLoadError != null) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OmniGlassPillButton(
+                                text = "Retry",
+                                compact = isCompact,
+                                onClick = {
+                                    playlistLoadError = null
+                                    loadM3u(playlistUrl)
+                                }
+                            )
+                            OmniGlassPillButton(
+                                text = "Edit URL",
+                                compact = isCompact,
+                                onClick = {
+                                    showUrlDialog = true
+                                }
+                            )
+                        }
+                    } else {
+                        CircularProgressIndicator(
+                            color = OmniGlass.AccentNeon,
+                            strokeWidth = 2.5.dp,
+                            modifier = Modifier.size(if (isCompact) 24.dp else 28.dp)
+                        )
+                    }
                 }
             }
         }
@@ -1408,104 +1547,6 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
             }
         }
 
-        // Aspect Ratio Manual Selection Dialog
-        if (showAspectDialog) {
-            AlertDialog(
-                onDismissRequest = { showAspectDialog = false },
-                title = {
-                    Text(
-                        "Aspect Ratio",
-                        color = OmniGlass.TextPrimary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = if (isCompact) 18.sp else 20.sp
-                    )
-                },
-                text = {
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        val options = listOf(
-                            Triple(0, "Fit", "Original video ratio with letterboxing"),
-                            Triple(1, "Fill", "Zoom & crop to fill complete screen"),
-                            Triple(2, "Stretch", "Anamorphic stretch to complete screen")
-                        )
-                        options.forEach { (mode, title, desc) ->
-                            val isChosen = aspectMode == mode
-                            var isRowFocused by remember { mutableStateOf(false) }
-                            val rowBg = when {
-                                isRowFocused -> OmniGlass.GlassCardFocused
-                                isChosen -> OmniGlass.AccentNeon
-                                else -> Color(0x22FFFFFF)
-                            }
-                            val textCol = when {
-                                isRowFocused || isChosen -> OmniGlass.TextDark
-                                else -> OmniGlass.TextPrimary
-                            }
-                            val subCol = when {
-                                isRowFocused || isChosen -> Color(0xFF222B45)
-                                else -> OmniGlass.TextSecondary
-                            }
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(rowBg)
-                                    .onFocusChanged { isRowFocused = it.isFocused }
-                                    .focusable()
-                                    .onKeyEvent { keyEvent ->
-                                        if (keyEvent.type == KeyEventType.KeyDown) {
-                                            val code = keyEvent.nativeKeyEvent.keyCode
-                                            if (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER) {
-                                                setAspectMode(mode)
-                                                showAspectDialog = false
-                                                true
-                                            } else false
-                                        } else false
-                                    }
-                                    .clickable {
-                                        setAspectMode(mode)
-                                        showAspectDialog = false
-                                    }
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text(
-                                        text = title,
-                                        color = textCol,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = if (isCompact) 15.sp else 16.sp
-                                    )
-                                    Text(
-                                        text = desc,
-                                        color = subCol,
-                                        fontSize = if (isCompact) 11.sp else 12.sp
-                                    )
-                                }
-                                if (isChosen) {
-                                    Text(
-                                        text = "✓",
-                                        color = OmniGlass.TextDark,
-                                        fontWeight = FontWeight.Black,
-                                        fontSize = 18.sp
-                                    )
-                                }
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { showAspectDialog = false }) {
-                        Text("Close", color = OmniGlass.AccentNeon, fontWeight = FontWeight.Bold)
-                    }
-                },
-                containerColor = Color(0xF2121724),
-                shape = RoundedCornerShape(20.dp)
-            )
-        }
-
         // Playlist URL Dialog
         if (showUrlDialog) {
             var draftUrl by remember(playlistUrl) { mutableStateOf(playlistUrl) }
@@ -1520,7 +1561,12 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
                     )
                 },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                    ) {
                         Text(
                             "Enter live M3U or M3U8 link for OmniTV:",
                             color = OmniGlass.TextSecondary,

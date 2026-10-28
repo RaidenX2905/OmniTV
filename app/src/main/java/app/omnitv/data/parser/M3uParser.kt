@@ -16,6 +16,9 @@ object M3uParser {
 
     private val ATTRIBUTE_REGEX = Regex("""([\w-]+)="([^"]*)"""")
 
+    const val MAX_RAW_CHANNELS = 25000
+    const val MAX_FINALIZED_CHANNELS = 12000
+
     data class Result(
         val channels: List<Channel>,
         val declaredEpgUrl: String?,
@@ -25,29 +28,22 @@ object M3uParser {
     fun parse(input: InputStream, sourceId: Long): Result =
         input.bufferedReader().use { parse(it, sourceId) }
 
-    // Cache last parsed playlist to avoid full reparsing on refresh
-    private var _cached: Pair<String, Result>? = null
-    // Persistent parsed-channel cache (light, no heavy dep; uses file-backed storage)
-    private val persistentCacheFile = java.io.File("/tmp/omnitv_parsed_cache.json") // replaced with context-based in real; using file for demo
-    fun saveParsedCache(channels: List<app.omnitv.data.model.Channel>, sourceId: Long) {
-        try { persistentCacheFile.writeText(channels.joinToString("\n") { it.streamUrl + "|" + it.name }) } catch (_: Exception) {}
-    }
-    fun loadParsedCache(sourceId: Long): List<app.omnitv.data.model.Channel>? {
-        return try {
-            if (!persistentCacheFile.exists()) return null
-            val text = persistentCacheFile.readText()
-            text.lines().map { line ->
-                val parts = line.split("|")
-                app.omnitv.data.model.Channel(name = parts.getOrNull(1) ?: "", streamUrl = parts.getOrNull(0) ?: "")
-            }.filter { it.streamUrl.isNotBlank() }
-        } catch (_: Exception) { null }
+    // Memory cache with URL/key isolation to avoid cross-playlist leakage
+    private val memoryCache = java.util.concurrent.ConcurrentHashMap<String, Result>()
+
+    fun parseCached(key: String, text: String, sourceId: Long): Result {
+        memoryCache[key]?.let { return it }
+        val r = parse(text, sourceId)
+        // Keep memory cache bounded to avoid holding multiple large playlists in RAM
+        if (memoryCache.size >= 3) {
+            memoryCache.clear()
+        }
+        memoryCache[key] = r
+        return r
     }
 
-    fun parseCached(text: String, sourceId: Long): Result {
-        if (_cached != null && _cached!!.first == text) return _cached!!.second
-        val r = parse(text, sourceId)
-        _cached = text to r
-        return r
+    fun clearCache() {
+        memoryCache.clear()
     }
 
     fun parse(text: String, sourceId: Long): Result =
@@ -145,7 +141,7 @@ object M3uParser {
                     val rawName = pendingName
                     if (rawName.isNullOrBlank()) {
                         skipped++
-                    } else {
+                    } else if (rawChannels.size < MAX_RAW_CHANNELS) {
                         val attributes = pendingAttributes
                         val q = parseQualityAndClean(rawName)
                         val streamId = attributes["tvg-id"]?.takeIf { it.isNotBlank() } ?: q.groupKey
@@ -165,6 +161,8 @@ object M3uParser {
                             streamUrl = line,
                             sortIndex = index++,
                         )
+                    } else {
+                        skipped++
                     }
                     pendingName = null
                     pendingAttributes = emptyMap()
@@ -180,9 +178,9 @@ object M3uParser {
             groupedVariants.getOrPut(key) { ArrayList() }.add(ch)
         }
 
-        val finalizedChannels = ArrayList<Channel>(groupedVariants.size)
+        val finalizedChannels = ArrayList<Channel>(groupedVariants.size.coerceAtMost(MAX_FINALIZED_CHANNELS))
         for (variants in groupedVariants.values) {
-            if (finalizedChannels.size >= 12000) break // Exact 12,000 channel cap for low-end device stability
+            if (finalizedChannels.size >= MAX_FINALIZED_CHANNELS) break // Exact 12,000 channel cap for low-end device stability
             // Sort descending: highest quality rank first
             val sorted = variants.sortedByDescending { it.qualityRank }
             val primary = sorted.first()

@@ -6,7 +6,7 @@ plugins {
 android {
     namespace = "app.omnitv"
     compileSdk = 35
-    defaultConfig { applicationId = "app.omnitv"; minSdk = 23; targetSdk = 35; versionCode = 3; versionName = "1.0.2" }
+    defaultConfig { applicationId = "app.omnitv"; minSdk = 23; targetSdk = 35; versionCode = 4; versionName = "1.0.3" }
     buildFeatures { compose = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.11" }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
@@ -39,5 +39,9 @@ dependencies {
     implementation(libs.media3.exoplayer.rtsp)
     implementation(libs.media3.ui)
     implementation(libs.media3.datasource.okhttp)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.truth)
 }
 
