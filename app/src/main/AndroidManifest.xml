@@ -53,7 +53,9 @@
             android:windowSoftInputMode="adjustResize"
             android:launchMode="singleTask"
             android:screenOrientation="unspecified"
-            android:theme="@style/Theme.OmniTV">
+            android:theme="@style/Theme.OmniTV"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true">
 
             <!-- Mobile & Tablet Launcher -->
             <intent-filter>

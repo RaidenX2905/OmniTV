@@ -6,7 +6,9 @@ package app.omnitv
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.pm.ActivityInfo
+import android.app.PictureInPictureParams
 import android.os.Bundle
+import android.util.Rational
 import android.view.KeyEvent
 import android.os.SystemClock
 import android.view.ViewGroup
@@ -110,6 +112,23 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() { super.onStart(); window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     override fun onStop() { super.onStop(); window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+
+    // PiP by default on home/back — playback keeps running in the small window
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        enterPictureInPictureMode(createPipParams())
+    }
+
+    override fun onBackPressed() {
+        enterPictureInPictureMode(createPipParams())
+    }
+
+    private fun createPipParams(): PictureInPictureParams {
+        val ratio = Rational(16, 9)
+        return PictureInPictureParams.Builder()
+            .setAspectRatio(ratio)
+            .build()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -658,7 +677,8 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
                         return
                     }
                 }
-                playerError = "Playback error: ${error.errorCodeName}"
+                // Playback error handled silently: failover/retry already attempted above.
+                // playerError is intentionally not shown to the user.
             }
         }
 
@@ -708,7 +728,10 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
             showChannelGuide && channelSearchQuery.isNotEmpty() -> channelSearchQuery = ""
             showChannelGuide -> showChannelGuide = false
             showOverlay -> showOverlay = false
-            else -> showExitDialog = true
+            else -> {
+                // Enter PiP by default instead of exit dialog
+                (context as androidx.activity.ComponentActivity).onBackPressed()
+            }
         }
         resetOverlayTimer.tryEmit(Unit)
     }
@@ -830,14 +853,8 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
                             true
                         }
                         KeyEvent.KEYCODE_BACK -> {
-                            when {
-                                showExitDialog -> showExitDialog = false
-                                showUrlDialog -> showUrlDialog = false
-                                showChannelGuide && channelSearchQuery.isNotEmpty() -> channelSearchQuery = ""
-                                showChannelGuide -> showChannelGuide = false
-                                showOverlay -> showOverlay = false
-                                else -> showExitDialog = true
-                            }
+                            // Enter PiP by default instead of exit dialog
+                            (context as androidx.activity.ComponentActivity).onBackPressed()
                             true
                         }
                         else -> false
@@ -895,25 +912,6 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
             },
             modifier = Modifier.fillMaxSize()
         )
-
-        // Error card
-        if (playerError != null) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xE6140505))
-                    .border(1.dp, Color(0x66FF5252), RoundedCornerShape(14.dp))
-                    .padding(horizontal = 20.dp, vertical = 12.dp)
-            ) {
-                Text(
-                    text = playerError ?: "",
-                    color = Color(0xFFFF8B8B),
-                    fontSize = if (isCompact) 13.sp else 15.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-        }
 
         // Stream Quality & Failover Notification Pill
         AnimatedVisibility(
@@ -1509,40 +1507,6 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
                             modifier = Modifier.size(if (isCompact) 24.dp else 28.dp)
                         )
                     }
-                }
-            }
-        }
-
-        // Subtly Indicated Live Stream Buffering (Non-blocking, minimalist glass pill)
-        AnimatedVisibility(
-            visible = isPlayerBuffering && channels.isNotEmpty() && isInitialPlaybackStarted,
-            enter = fadeIn(animationSpec = tween(150)),
-            exit = fadeOut(animationSpec = tween(150)),
-            modifier = Modifier
-                .align(Alignment.Center)
-        ) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Color(0xD90D111A))
-                    .border(1.dp, OmniGlass.GlassBorder, RoundedCornerShape(20.dp))
-                    .padding(horizontal = 20.dp, vertical = 12.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    CircularProgressIndicator(
-                        color = OmniGlass.AccentNeon,
-                        strokeWidth = 2.5.dp,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(
-                        text = "Buffering stream…",
-                        color = OmniGlass.TextPrimary,
-                        fontSize = if (isCompact) 13.sp else 15.sp,
-                        fontWeight = FontWeight.Medium
-                    )
                 }
             }
         }
