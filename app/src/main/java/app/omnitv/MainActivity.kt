@@ -113,15 +113,24 @@ class MainActivity : ComponentActivity() {
     override fun onStart() { super.onStart(); window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     override fun onStop() { super.onStop(); window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
 
-    // PiP by default on home/back — playback keeps running in the small window
+    // PiP by default on home/back — phones & tablets only (Android TV does not support PiP)
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        enterPictureInPictureMode(createPipParams())
+        if (!isAndroidTv) {
+            enterPictureInPictureMode(createPipParams())
+        }
     }
 
     override fun onBackPressed() {
-        enterPictureInPictureMode(createPipParams())
+        if (!isAndroidTv) {
+            enterPictureInPictureMode(createPipParams())
+        } else {
+            super.onBackPressed()
+        }
     }
+
+    private val isAndroidTv: Boolean
+        get() = packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_LEANBACK)
 
     private fun createPipParams(): PictureInPictureParams {
         val ratio = Rational(16, 9)
@@ -333,7 +342,7 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
             }
     }
 
-    val retryScheduler = remember { RetryScheduler(coroutineScope, maxDelayMs = 12000, initialDelayMs = 1000) }
+    val retryScheduler = remember { RetryScheduler(coroutineScope, maxDelayMs = 12000, initialDelayMs = 500) }
     val connectivityMonitor = remember { ConnectivityMonitor(context) }
     val isNetworkConnected by connectivityMonitor.isConnected.collectAsState()
     val activeNetworkType by connectivityMonitor.networkType.collectAsState()
@@ -569,10 +578,10 @@ fun OmniTvPlayerApp(prefs: SharedPreferences) {
         }
     }
 
-    // Auto-failover watchdog: if playback stays buffering for > 7.5 seconds on mobile data, automatically switch stream
+    // Auto-failover watchdog: if playback stays buffering for > 3 seconds on mobile data, automatically switch stream
     LaunchedEffect(isPlayerBuffering, currentStreamUrl) {
         if (isPlayerBuffering && isInitialPlaybackStarted) {
-            delay(7500)
+            delay(3000)
             if (isPlayerBuffering) {
                 failoverToNextStream("Buffering timeout")
             }
