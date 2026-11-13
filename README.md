@@ -1,3 +1,5 @@
+/
+
 # OmniTV - IPTV Player for Android
 
 <p align="center">
@@ -23,6 +25,7 @@ A lightweight IPTV streaming application built with Kotlin, Jetpack Compose, and
 OmniTV works with live M3U and M3U8 IPTV playlists.
 
 ### Recommended Playlist (by Creator)
+
 For legal and freely available public channels, you can use the community-maintained [iptv-org](https://github.com/iptv-org/iptv.git) playlist:
 
 - **Repository**: [https://github.com/iptv-org/iptv.git](https://github.com/iptv-org/iptv.git)
@@ -66,15 +69,15 @@ For legal and freely available public channels, you can use the community-mainta
 
 ## Remote & Navigation Shortcuts
 
-| Key / Input | Action |
-| :--- | :--- |
-| **D-Pad Center / OK / Enter** | Show overlay (auto-hides after 5s) / Tune channel |
-| **D-Pad Left / Right** | Fast channel zap previous / next |
-| **D-Pad Up / Down** (Overlay closed) | Open channel guide |
-| **D-Pad Up / Down** (Overlay open) | Move between search bar, action pills, and channel list |
-| **Green / Yellow / 0 / Audio Key** | Instant Aspect-Ratio toggle (`Fit → Fill → Stretch`) |
-| **Menu Button** | Open Playlist URL configuration dialog |
-| **Back Button** | Clear search text / Close overlay / Exit app confirmation |
+| Key / Input                                | Action                                                    |
+| :----------------------------------------- | :-------------------------------------------------------- |
+| **D-Pad Center / OK / Enter**        | Show overlay (auto-hides after 5s) / Tune channel         |
+| **D-Pad Left / Right**               | Fast channel zap previous / next                          |
+| **D-Pad Up / Down** (Overlay closed) | Open channel guide                                        |
+| **D-Pad Up / Down** (Overlay open)   | Move between search bar, action pills, and channel list   |
+| **Green / Yellow / 0 / Audio Key**   | Instant Aspect-Ratio toggle (`Fit → Fill → Stretch`)  |
+| **Menu Button**                      | Open Playlist URL configuration dialog                    |
+| **Back Button**                      | Clear search text / Close overlay / Exit app confirmation |
 
 ---
 
@@ -95,18 +98,21 @@ Works on Android phones, tablets, and Android TV / Google TV / Fire TV devices.
 Connect your device and computer to the same Wi-Fi network, enable Developer Options and Network Debugging on your device, then run:
 
 #### Windows
+
 ```cmd
 adb connect <DEVICE_IP>:5555
 adb install -r OmniTV-latest.apk
 ```
 
 #### Linux
+
 ```bash
 adb connect <DEVICE_IP>:5555
 adb install -r OmniTV-latest.apk
 ```
 
 #### macOS
+
 ```zsh
 adb connect <DEVICE_IP>:5555
 adb install -r OmniTV-latest.apk
@@ -118,15 +124,15 @@ adb install -r OmniTV-latest.apk
 
 OmniTV is engineered with a modern reactive Android stack focused on high performance and minimal memory footprint:
 
-| Package / Module | Version | Purpose |
-| :--- | :--- | :--- |
-| **AndroidX Media3 ExoPlayer** | `1.5.0` | Ultra-low latency HLS, DASH, RTSP, and TS live stream playback engine |
-| **Media3 OkHttp DataSource** | `1.5.0` | Fast connection pooling, HTTP/2 multiplexing, and robust stream timeouts |
-| **Jetpack Compose UI** | `2024.11.00 (BOM)` | Hardware-accelerated UI rendering with 60 FPS translucent frosted glass components |
-| **Jetpack Compose Material 3** | `1.3.x` | Modern styling, dynamic insets, and dark-theme palette system |
-| **KotlinX Coroutines** | `1.9.0` | Non-blocking asynchronous I/O and non-freezing M3U playlist parsing |
-| **AndroidX Activity Compose** | `1.9.3` | Back-press interception, edge-to-edge window insets, and IME software keyboard binding |
-| **OkHttp3** | `4.12.0` | High-throughput HTTP client for downloading remote M3U/M3U8 playlists |
+| Package / Module                     | Version              | Purpose                                                                                |
+| :----------------------------------- | :------------------- | :------------------------------------------------------------------------------------- |
+| **AndroidX Media3 ExoPlayer**  | `1.5.0`            | Ultra-low latency HLS, DASH, RTSP, and TS live stream playback engine                  |
+| **Media3 OkHttp DataSource**   | `1.5.0`            | Fast connection pooling, HTTP/2 multiplexing, and robust stream timeouts               |
+| **Jetpack Compose UI**         | `2024.11.00 (BOM)` | Hardware-accelerated UI rendering with 60 FPS translucent frosted glass components     |
+| **Jetpack Compose Material 3** | `1.3.x`            | Modern styling, dynamic insets, and dark-theme palette system                          |
+| **KotlinX Coroutines**         | `1.9.0`            | Non-blocking asynchronous I/O and non-freezing M3U playlist parsing                    |
+| **AndroidX Activity Compose**  | `1.9.3`            | Back-press interception, edge-to-edge window insets, and IME software keyboard binding |
+| **OkHttp3**                    | `4.12.0`           | High-throughput HTTP client for downloading remote M3U/M3U8 playlists                  |
 
 ---
 
@@ -135,14 +141,17 @@ OmniTV is engineered with a modern reactive Android stack focused on high perfor
 Requires **JDK 21** and **Android SDK Platform 35**.
 
 ### Release APK (~3.5 MB)
+
 ```bash
 ./gradlew assembleRelease
 ```
+
 Output: `app/build/outputs/apk/release/app-release.apk`
 
 ### Debug APK
+
 ```bash
 ./gradlew assembleDebug
 ```
-Output: `app/build/outputs/apk/debug/app-debug.apk`
 
+Output: `app/build/outputs/apk/debug/app-debug.apk`
