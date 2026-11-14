@@ -41,6 +41,8 @@ For legal and freely available public channels, you can use the community-mainta
 ## Features
 
 - **Always-On Adaptive Audio Normalization**: Real-time ITU-R BS.1770 / EBU R128 loudness compressor and peak limiter. Equalizes volume spikes between quiet channels and loud commercials with transparent attack/release smoothing and zero distortion, leaving hardware volume controls 100% independent.
+- **Picture-in-Picture (PiP) by Default**: Smooth background playback on phones and tablets. Seamlessly continues stream playback in a floating window when navigating home or tapping Back (disabled on Android TV to preserve standard Leanback navigation).
+- **Fast 3-Second Failover & Silent Recovery**: Auto-failover watchdog triggers within 3 seconds of a stall on alternate streams; non-intrusive stream recovery without disruptive buffering spinners or error cards over active video.
 - **Instant Aspect-Ratio Cycling**: Tap on phone or press OK / Remote shortcuts (`Green`, `Yellow`, `Audio`, `0`) to instantly cycle through **Fit → Fill (Zoom & Crop) → Stretch → Fit** with immediate viewport resizing and no disruptive dialogs.
 - **Geometric True-Center Startup**: Clean, mathematically centered neon infinity hero logo with non-shifting status and loader controls docked neatly beneath.
 - **5-Second Auto-Hide HUD**: Player controls, channel details, and top bar automatically fade out after 5 seconds of inactivity on both touch and TV remote, leaving an unobstructed full-screen stream.
@@ -87,7 +89,7 @@ For legal and freely available public channels, you can use the community-mainta
 
 Download the latest production release APK from [GitHub Releases](https://github.com/RaidenX2905/OmniTV/releases/latest):
 
-- **[Download OmniTV-v1.0.3-release.apk (Direct Release Asset)](https://github.com/RaidenX2905/OmniTV/releases/download/v1.0.3/OmniTV-v1.0.3-release.apk)** (~3.5 MB)
+- **[Download OmniTV-v1.0.4-release.apk (Direct Release Asset)](https://github.com/RaidenX2905/OmniTV/releases/download/v1.0.4/OmniTV-v1.0.4-release.apk)** (~3.6 MB)
 
 Works on Android phones, tablets, and Android TV / Google TV / Fire TV devices.
 
