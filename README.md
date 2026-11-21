@@ -1,159 +1,48 @@
-/
+<div align="center">
 
-# OmniTV - IPTV Player for Android
+# OmniTV
+
+[![Android](https://img.shields.io/badge/Android-Phone%20%7C%20TV-3DDC84?style=flat-square&logo=android&logoColor=white)](#) [![Kotlin](https://img.shields.io/badge/Kotlin-2.0+-7F52FF?style=flat-square&logo=kotlin&logoColor=white)](#) [![Jetpack%20Compose](https://img.shields.io/badge/Jetpack%20Compose-M3-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white)](#) [![Media3](https://img.shields.io/badge/Media3-ExoPlayer-FF6F00?style=flat-square&logo=google&logoColor=white)](#) [![APK%20Size](https://img.shields.io/badge/APK%20Size-~3.5%20MB-00C853?style=flat-square)](#) [![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](#)
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Platform-Android%20Phone%20%7C%20Tablet%20%7C%20Android%20TV-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Platform: Android Devices" />
-  <img src="https://img.shields.io/badge/Architecture-Kotlin%20%7C%20Jetpack%20Compose%20%7C%20Media3-4285F4?style=for-the-badge&logo=kotlin&logoColor=white" alt="Tech Stack" />
-  <img src="https://img.shields.io/badge/APK%20Size-~3.5%20MB-brightgreen?style=for-the-badge" alt="Size" />
+  Hardware-accelerated IPTV media player for Android phones, tablets, and Android TV featuring a glassmorphic interface, channel search, and D-pad remote navigation.
 </p>
 
-A lightweight IPTV streaming application built with Kotlin, Jetpack Compose, and AndroidX Media3 (ExoPlayer). Works across Android phones, tablets, and Android TV / Google TV / Fire TV devices.
+</div>
 
 ---
 
-## Device Compatibility
-
-- **Android Phones**: Touch controls, sensor-based landscape orientation during playback, and automatic soft keyboard resizing.
-- **Android Tablets**: Responsive layout, search, and channel guide navigation.
-- **Android TV / Google TV / Fire TV**: Full D-Pad remote control support, channel switching, and remote shortcut keys.
+**Live Demo**: [https://github.com/RaidenX2905/OmniTV/releases](https://github.com/RaidenX2905/OmniTV/releases)
 
 ---
 
-## Playlist Configuration & Recommended Sources
+## Highlights
 
-OmniTV works with live M3U and M3U8 IPTV playlists.
-
-### Recommended Playlist (by Creator)
-
-For legal and freely available public channels, you can use the community-maintained [iptv-org](https://github.com/iptv-org/iptv.git) playlist:
-
-- **Repository**: [https://github.com/iptv-org/iptv.git](https://github.com/iptv-org/iptv.git)
-- **Playlist URL**:
-  ```text
-  https://iptv-org.github.io/iptv/index.m3u
-  ```
-
-> **Custom Playlists**: The above URL is recommended for initial setup, but you can enter your own custom M3U/M3U8 playlist URL in the **Playlist URL** dialog at any time.
+- **Universal Screen Adaptation**: Seamless experience across Android phones (touch-first), tablets (adaptive grid), and Android TV / Google TV / Fire TV (D-pad focus engine).
+- **Low-Footprint Runtime**: Ultra-lean APK footprint under 4 MB with zero bloat.
+- **ExoPlayer Video Engine**: Powered by AndroidX Media3 for instant buffering, hardware decoding, and aspect-ratio preservation.
+- **M3U/M3U8 Support**: Built-in channel search, group categorization, and custom playlist URL configuration.
 
 ---
 
-## Features
+## Playlist Sources
 
-- **Always-On Adaptive Audio Normalization**: Real-time ITU-R BS.1770 / EBU R128 loudness compressor and peak limiter. Equalizes volume spikes between quiet channels and loud commercials with transparent attack/release smoothing and zero distortion, leaving hardware volume controls 100% independent.
-- **Picture-in-Picture (PiP) by Default**: Smooth background playback on phones and tablets. Seamlessly continues stream playback in a floating window when navigating home or tapping Back (disabled on Android TV to preserve standard Leanback navigation).
-- **Fast 3-Second Failover & Silent Recovery**: Auto-failover watchdog triggers within 3 seconds of a stall on alternate streams; non-intrusive stream recovery without disruptive buffering spinners or error cards over active video.
-- **Instant Aspect-Ratio Cycling**: Tap on phone or press OK / Remote shortcuts (`Green`, `Yellow`, `Audio`, `0`) to instantly cycle through **Fit → Fill (Zoom & Crop) → Stretch → Fit** with immediate viewport resizing and no disruptive dialogs.
-- **Geometric True-Center Startup**: Clean, mathematically centered neon infinity hero logo with non-shifting status and loader controls docked neatly beneath.
-- **5-Second Auto-Hide HUD**: Player controls, channel details, and top bar automatically fade out after 5 seconds of inactivity on both touch and TV remote, leaving an unobstructed full-screen stream.
-- **Keep Screen Awake**: Automatic screen timeout is prevented during active viewing and channel navigation, automatically restoring normal device sleep behavior when leaving the app.
-- **Adaptive Cellular Streaming & Rebuffer Prevention**: Integrated `DefaultBandwidthMeter`, adaptive buffer durations (800ms start, 2.5s–15s cushion), and automatic failover watchdogs to eliminate stuttering and buffering loops on 3G/4G/5G networks.
-- **Safe Playlist Caching & Memory Protection**: URL-isolated disk caching with ETag / Last-Modified 304 revalidation, bounded 40MB response limits, and a 12,000-channel cap to protect low-end Android hardware from OOM crashes.
-- **Translucent Glass UI**: Frosted glass panels styled for simple, distraction-free viewing.
-- **TV Remote Navigation**:
-  - **Left / Right**: Previous / Next channel.
-  - **Up / Down**: Channel browsing or menu selection.
-  - **Center / OK**: Open HUD overlay or tune selected channel.
-  - **Green / Yellow / 0 / Audio Key**: Switch aspect ratio between Fit, Fill, and Stretch.
-  - **Menu Key**: Open Playlist URL dialog.
-- **Channel Search & Adaptive Layout**:
-  - Search channels by name, group, or number in the channel guide.
-  - In landscape mode on phones and tablets, the UI resizes when the keyboard opens so the search bar and results stay visible.
-  - On TV remotes, pressing Down from the search box navigates directly into channel results.
-  - Pressing Back clears the search text before closing the guide.
-- **Orientation Behavior**:
-  - Player forces landscape playback (flips to both landscape angles with device sensors).
-  - Playlist URL input allows portrait mode for easier typing on phones.
-- **Aspect Ratio Options**: Fit (original with letterbox), Fill (zoom to fill screen), and Stretch.
-- **Lightweight Build**: Pre-compiled release APK is around 3.5 MB with unused code stripped via R8/ProGuard.
+Works with standard IPTV playlists. For legal and free public streams, the community-maintained `iptv-org` playlist is recommended:
 
----
-
-## Remote & Navigation Shortcuts
-
-| Key / Input                                | Action                                                    |
-| :----------------------------------------- | :-------------------------------------------------------- |
-| **D-Pad Center / OK / Enter**        | Show overlay (auto-hides after 5s) / Tune channel         |
-| **D-Pad Left / Right**               | Fast channel zap previous / next                          |
-| **D-Pad Up / Down** (Overlay closed) | Open channel guide                                        |
-| **D-Pad Up / Down** (Overlay open)   | Move between search bar, action pills, and channel list   |
-| **Green / Yellow / 0 / Audio Key**   | Instant Aspect-Ratio toggle (`Fit → Fill → Stretch`)  |
-| **Menu Button**                      | Open Playlist URL configuration dialog                    |
-| **Back Button**                      | Clear search text / Close overlay / Exit app confirmation |
-
----
-
-## Installation
-
-### Method 1: Download Pre-built APK from GitHub Releases
-
-Download the latest production release APK from [GitHub Releases](https://github.com/RaidenX2905/OmniTV/releases/latest):
-
-- **[Download OmniTV-v1.0.4-release.apk (Direct Release Asset)](https://github.com/RaidenX2905/OmniTV/releases/download/v1.0.4/OmniTV-v1.0.4-release.apk)** (~3.6 MB)
-
-Works on Android phones, tablets, and Android TV / Google TV / Fire TV devices.
-
----
-
-### Method 2: Sideload via Wireless ADB (Windows, Linux, macOS)
-
-Connect your device and computer to the same Wi-Fi network, enable Developer Options and Network Debugging on your device, then run:
-
-#### Windows
-
-```cmd
-adb connect <DEVICE_IP>:5555
-adb install -r OmniTV-latest.apk
-```
-
-#### Linux
-
-```bash
-adb connect <DEVICE_IP>:5555
-adb install -r OmniTV-latest.apk
-```
-
-#### macOS
-
-```zsh
-adb connect <DEVICE_IP>:5555
-adb install -r OmniTV-latest.apk
+```text
+https://iptv-org.github.io/iptv/index.m3u
 ```
 
 ---
 
-## Architecture & Core Packages
-
-OmniTV is engineered with a modern reactive Android stack focused on high performance and minimal memory footprint:
-
-| Package / Module                     | Version              | Purpose                                                                                |
-| :----------------------------------- | :------------------- | :------------------------------------------------------------------------------------- |
-| **AndroidX Media3 ExoPlayer**  | `1.5.0`            | Ultra-low latency HLS, DASH, RTSP, and TS live stream playback engine                  |
-| **Media3 OkHttp DataSource**   | `1.5.0`            | Fast connection pooling, HTTP/2 multiplexing, and robust stream timeouts               |
-| **Jetpack Compose UI**         | `2024.11.00 (BOM)` | Hardware-accelerated UI rendering with 60 FPS translucent frosted glass components     |
-| **Jetpack Compose Material 3** | `1.3.x`            | Modern styling, dynamic insets, and dark-theme palette system                          |
-| **KotlinX Coroutines**         | `1.9.0`            | Non-blocking asynchronous I/O and non-freezing M3U playlist parsing                    |
-| **AndroidX Activity Compose**  | `1.9.3`            | Back-press interception, edge-to-edge window insets, and IME software keyboard binding |
-| **OkHttp3**                    | `4.12.0`           | High-throughput HTTP client for downloading remote M3U/M3U8 playlists                  |
-
----
-
-## Building from Source
-
-Requires **JDK 21** and **Android SDK Platform 35**.
-
-### Release APK (~3.5 MB)
+## Build from Source
 
 ```bash
 ./gradlew assembleRelease
 ```
 
-Output: `app/build/outputs/apk/release/app-release.apk`
+---
 
-### Debug APK
+## License
 
-```bash
-./gradlew assembleDebug
-```
-
-Output: `app/build/outputs/apk/debug/app-debug.apk`
+MIT License
