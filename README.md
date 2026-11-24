@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="OmniTV App Icon" width="128" height="128">
+</p>
+
 <div align="center">
 
 # OmniTV
